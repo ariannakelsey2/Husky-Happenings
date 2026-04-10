@@ -21,7 +21,11 @@ export default function EventsPage() {
 
   async function loadEvents() {
     const data = await fetchEvents();
-    setEvents(data);
+    if (Array.isArray(data)) {
+      setEvents(data);
+    } else {
+      setEvents([]);
+    }
   }
 
   function handleChange(event) {
@@ -31,6 +35,8 @@ export default function EventsPage() {
 
   async function handleSubmit(event) {
     event.preventDefault();
+    setMessage("");
+
     const result = await createEvent(formData);
 
     if (result.error) {
@@ -47,23 +53,36 @@ export default function EventsPage() {
       endDateTime: "",
       privacyType: "Public",
     });
+
     loadEvents();
   }
 
   return (
-    <div>
-      <h2>Events</h2>
-      <p>Create and view upcoming events.</p>
+    <div className="events-page">
+      <div className="events-header">
+        <h1>Events</h1>
+        <p>Create and view upcoming events.</p>
+      </div>
 
-      <CreateEventForm
-        formData={formData}
-        onChange={handleChange}
-        onSubmit={handleSubmit}
-      />
+      <section className="events-section">
+        <h2>Create Event</h2>
+        <CreateEventForm
+          formData={formData}
+          onChange={handleChange}
+          onSubmit={handleSubmit}
+        />
+        {message && <p className="events-message">{message}</p>}
+      </section>
 
-      {message && <p className="message">{message}</p>}
-
-      <EventList events={events} />
+      <section className="events-section">
+        <div className="events-list-header">
+          <h2>Upcoming Events</h2>
+          <button type="button" onClick={loadEvents} className="refresh-button">
+            Refresh
+          </button>
+        </div>
+        <EventList events={events} />
+      </section>
     </div>
   );
 }
