@@ -145,6 +145,20 @@ def me():
         "email": user["EMAIL"]
     }), 200
 
+# This functions returns all posts to the feed
+# Author: Sophia Priola
+@app.get("/api/posts")
+def get_posts():
+    local_cursor = db.cursor(dictionary=True)
+    local_cursor.callproc("GET_POSTS")
+
+    posts = []
+    for result in local_cursor.stored_results():
+        posts = result.fetchall()
+
+    local_cursor.close()
+    return jsonify(posts), 200
+
 
 
 if __name__ == "__main__":
