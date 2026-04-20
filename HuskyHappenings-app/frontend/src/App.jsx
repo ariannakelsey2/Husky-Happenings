@@ -20,7 +20,7 @@ import JobBoardPage from "./components/JobBoard/JobBoardPage.jsx";
 import MentorshipPage from "./components/Mentorship/MentorshipPage.jsx";
 
 function App() {
-  const { loading } = useAuth();
+  const { loading, isAuthenticated } = useAuth();
 
   if (loading) {
     return <p>Loading...</p>;
@@ -32,7 +32,10 @@ function App() {
 
       <main className="main-content">
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route
+            path="/"
+            element={isAuthenticated ? <Landing /> : <Home />}
+          />
           <Route path="/signup" element={<Signup />} />
           <Route path="/login" element={<Login />} />
 
