@@ -358,6 +358,24 @@ def get_posts():
     local_cursor.close()
     return jsonify(posts), 200
 
+@app.post("/api/posts")
+@login_required
+def create_post():
+    data = request.get_json()
+    content = data.get("content")
+
+    if not content or not content.strip():
+        return jsonify({"error": "Post content is required"}), 400
+
+    local_cursor = db.cursor(dictionary=True)
+    local_cursor.execute(
+        "INSERT INTO POSTS (AUTHOR_ID, CONTENT) VALUES (%s, %s)",
+        (g.user_id, content)
+    )
+    db.commit()
+    local_cursor.close()
+
+    return jsonify({"message": "Post created successfully"}), 201
 
 
 if __name__ == "__main__":
