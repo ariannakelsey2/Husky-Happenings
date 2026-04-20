@@ -6,25 +6,25 @@ export default function Feed() {
   const navigate = useNavigate();
   const [posts, setPosts] = useState([]);
 
-  useEffect(() => {
-    async function loadPosts() {
-      try {
-        const response = await fetch("https://localhost:5000/api/posts", {
-          credentials: "include",
-        });
+  async function loadPosts() {
+    try {
+      const response = await fetch("https://localhost:5000/api/posts", {
+        credentials: "include",
+      });
 
-        const data = await response.json();
+      const data = await response.json();
 
-        if (response.ok) {
-          setPosts(data);
-        } else {
-          console.error(data.error || "Failed to load posts");
-        }
-      } catch (error) {
-        console.error("Error loading posts:", error);
+      if (response.ok) {
+        setPosts(data);
+      } else {
+        console.error(data.error || "Failed to load posts");
       }
+    } catch (error) {
+      console.error("Error loading posts:", error);
     }
+  }
 
+  useEffect(() => {
     loadPosts();
   }, []);
 
@@ -58,9 +58,12 @@ export default function Feed() {
       {posts.map((post) => (
         <Post
           key={post.POST_ID}
+          postId={post.POST_ID}
           author={post.USERNAME}
           content={post.CONTENT}
           time={post.CREATED_AT}
+          likeCount={post.LIKE_COUNT}
+          onRefresh={loadPosts}
         />
       ))}
     </div>
