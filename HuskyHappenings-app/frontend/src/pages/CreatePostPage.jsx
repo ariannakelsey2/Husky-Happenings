@@ -3,16 +3,37 @@ import { useNavigate } from "react-router-dom";
 
 export default function CreatePostPage() {
   const [content, setContent] = useState("");
+  const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!content.trim()) return;
+    if (!content.trim()) {
+      setError("Post content cannot be empty");
+      return;
+    }
 
-    console.log("Post submitted:", content);
+    try {
+      const response = await fetch("http://localhost:5000/api/posts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({ content }),
+      });
 
-    navigate("/landing");
+      const data = await response.json();
+
+      if (response.ok) {
+        navigate("/landing");
+      } else {
+        setError(data.error || "Failed to create post");
+      }
+    } catch (err) {
+      setError("Network error");
+    }
   };
 
   return (
@@ -24,6 +45,8 @@ export default function CreatePostPage() {
       }}
     >
       <h2 style={{ marginBottom: "20px" }}>Create a Post</h2>
+
+      {error && <p style={{ color: "red" }}>{error}</p>}
 
       <form onSubmit={handleSubmit}>
         <textarea

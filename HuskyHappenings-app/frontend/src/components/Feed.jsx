@@ -1,39 +1,32 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Post from "./Post";
-import CreatePost from "./CreatePost";
 
 export default function Feed() {
-  const [posts, setPosts] = useState([
-    {
-      id: 1,
-      author: "John Smith",
-      content: "This is my first post on the USM networking platform.",
-      time: "2 hours ago",
-    },
-    {
-      id: 2,
-      author: "Jane Doe",
-      content: "Looking for people to join a software engineering study group.",
-      time: "4 hours ago",
-    },
-    {
-      id: 3,
-      author: "Alex Brown",
-      content: "Reminder: career fair is happening this Friday in the student center.",
-      time: "1 day ago",
-    },
-  ]);
+  const navigate = useNavigate();
+  const [posts, setPosts] = useState([]);
 
-  const handleAddPost = (newContent) => {
-    const newPost = {
-      id: Date.now(),
-      author: "You",
-      content: newContent,
-      time: "Just now",
-    };
+  useEffect(() => {
+    async function loadPosts() {
+      try {
+        const response = await fetch("http://localhost:5000/api/posts", {
+          credentials: "include",
+        });
 
-    setPosts([newPost, ...posts]);
-  };
+        const data = await response.json();
+
+        if (response.ok) {
+          setPosts(data);
+        } else {
+          console.error(data.error || "Failed to load posts");
+        }
+      } catch (error) {
+        console.error("Error loading posts:", error);
+      }
+    }
+
+    loadPosts();
+  }, []);
 
   return (
     <div
@@ -45,14 +38,29 @@ export default function Feed() {
     >
       <h2 style={{ marginBottom: "20px" }}>News Feed</h2>
 
-      <CreatePost onAddPost={handleAddPost} />
+      <div style={{ marginBottom: "20px" }}>
+        <button
+          onClick={() => navigate("/create-post")}
+          style={{
+            backgroundColor: "#1d4ed8",
+            color: "white",
+            border: "none",
+            borderRadius: "8px",
+            padding: "10px 16px",
+            cursor: "pointer",
+            fontSize: "14px",
+          }}
+        >
+          Create Post
+        </button>
+      </div>
 
       {posts.map((post) => (
         <Post
-          key={post.id}
-          author={post.author}
-          content={post.content}
-          time={post.time}
+          key={post.POST_ID}
+          author={post.USERNAME}
+          content={post.CONTENT}
+          time={post.CREATED_AT}
         />
       ))}
     </div>
