@@ -19,7 +19,7 @@ import JobBoardPage from "./components/JobBoard/JobBoardPage.jsx";
 import MentorshipPage from "./components/Mentorship/MentorshipPage.jsx";
 
 function App() {
-  const { loading, isAuthenticated } = useAuth();
+  const {loading, isAuthenticated } = useAuth();
 
   if (loading) {
     return <p>Loading...</p>;
@@ -39,7 +39,7 @@ function App() {
           <Route path="/login" element={<Login />} />
 
           <Route
-            path="/profile/"
+            path="/profile/:userId?"
             element={
               <ProtectedRoute>
                 <Profile />
