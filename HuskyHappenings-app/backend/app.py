@@ -4,7 +4,6 @@ from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
-from flask_socketio import SocketIO, emit, join_room, leave_room
 import os
 import mysql.connector
 import secrets
@@ -12,8 +11,7 @@ import secrets
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True, origins=["https://localhost:5173"])  # allows frontend to communicate with backend
-socketio = SocketIO(app, cors_allowed_origins="https://localhost:5173")
+CORS(app, supports_credentials=True, origins=["http://localhost:5173"])  # allows frontend to communicate with backend
 
 
 # Connects the backend to the MySQL database
@@ -148,9 +146,9 @@ def login():
         'token',
         token,
         expires=expiresAt,
-        secure=True,
+        secure=False,
         httponly=True,
-        samesite="None"
+        samesite="Lax"
     )
 
     parameters = (token, userID, createdAt, expiresAt)
@@ -174,7 +172,7 @@ def logout():
         db.commit()
 
     response = jsonify({"message": "Logged out"})
-    response.set_cookie("token", "", expires=0, secure=True, httponly=True, samesite="None")
+    response.set_cookie("token", "", expires=0, secure=False, httponly=True, samesite="Lax")
     return response, 200
 
 
@@ -314,109 +312,29 @@ def send_message(conversation_id):
         (conversation_id, g.user_id, body)
     )
     db.commit()
-    
-    # Emit the message to all users in the conversation room
-    cursor.execute("SELECT MESSAGE_ID FROM MESSAGE WHERE CONVERSATION_ID = %s AND SENDER_ID = %s ORDER BY TIMESTAMP DESC LIMIT 1", (conversation_id, g.user_id))
-    message_record = cursor.fetchone()
-    
-    message_data = {
-        "message_id": message_record["MESSAGE_ID"],
-        "sender_id": g.user_id,
-        "body": body,
-        "sent_at": datetime.now(timezone.utc).isoformat()
-    }
-    
-    socketio.emit('receive_message', message_data, room=conversation_id)
-    
     return jsonify({"message": "Message sent"}), 201
-
-
-@socketio.on('join_conversation')
-def handle_join_conversation(data):
-    conversation_id = data.get('conversation_id')
-    join_room(conversation_id)
-
-@socketio.on('leave_conversation')
-def handle_leave_conversation(data):
-    conversation_id = data.get('conversation_id')
-    leave_room(conversation_id)
-
-@socketio.on('send_message')
-def handle_send_message(data):
-    conversation_id = data.get('conversation_id')
-    body = data.get('body')
-    user_id = data.get('user_id')
-    
-    if not body or not conversation_id:
-        return False
-    
-    # Check if user is a member of the conversation
-    cursor.execute("SELECT 1 FROM CONVERSATION_MEMBERS WHERE CONVERSATION_ID = %s AND USER_ID = %s", (conversation_id, user_id))
-    if not cursor.fetchone():
-        return False
-    
-    cursor.execute("INSERT INTO MESSAGE (CONVERSATION_ID, SENDER_ID, CONTENT) VALUES (%s, %s, %s)", (conversation_id, user_id, body))
-    db.commit()
-    
-    # Emit the message to all users in the conversation room
-    cursor.execute("SELECT MESSAGE_ID FROM MESSAGE WHERE CONVERSATION_ID = %s AND SENDER_ID = %s ORDER BY TIMESTAMP DESC LIMIT 1", (conversation_id, user_id))
-    message_record = cursor.fetchone()
-    
-    message_data = {
-        "message_id": message_record["MESSAGE_ID"],
-        "sender_id": user_id,
-        "body": body,
-        "sent_at": datetime.now(timezone.utc).isoformat()
-    }
-    
-    socketio.emit('receive_message', message_data, room=conversation_id)
-    return True
 
 
 @app.get("/api/profile/<int:user_id>")
 @login_required
 def get_profile(user_id):
-    cursor.execute("SELECT USER_ID, USERNAME, EMAIL, NAME, BIO, PICTURE_URL, PHONE_NUMBER, BIRTH_DATE, USER_TYPE FROM USERS WHERE USER_ID = %s", (user_id,))
+    cursor.execute(
+        "SELECT USER_ID, USERNAME, EMAIL, NAME, BIO, PICTURE_URL FROM USERS WHERE USER_ID = %s",
+        (user_id,)
+    )
     user = cursor.fetchone()
 
     if not user:
         return jsonify({"error": "User not found."}), 404
 
-    response = {
+    return jsonify({
         "user_id": user["USER_ID"],
         "username": user["USERNAME"],
         "email": user["EMAIL"],
         "name": user["NAME"],
         "bio": user["BIO"],
-        "picture_url": user["PICTURE_URL"],
-        "phone_number": user["PHONE_NUMBER"],
-        "birth_date": user["BIRTH_DATE"],
-        "user_type": user["USER_TYPE"]
-    }
-
-    # Fetch role-specific data
-    user_type = user["USER_TYPE"]
-    if user_type == "Student":
-        cursor.execute("SELECT MAJOR, GRADUATION_YEAR FROM STUDENTS WHERE USER_ID = %s", (user_id,))
-        student = cursor.fetchone()
-        if student:
-            response["major"] = student["MAJOR"]
-            response["graduation_year"] = student["GRADUATION_YEAR"]
-    elif user_type == "Faculty":
-        cursor.execute("SELECT DEPARTMENT, OFFICE_LOCATION FROM FACULTY WHERE USER_ID = %s", (user_id,))
-        faculty = cursor.fetchone()
-        if faculty:
-            response["department"] = faculty["DEPARTMENT"]
-            response["office_location"] = faculty["OFFICE_LOCATION"]
-    elif user_type == "Alumni":
-        cursor.execute("SELECT GRADUATION_YEAR, DEGREE_EARNED, CURRENT_EMPLOYER FROM ALUMNI WHERE USER_ID = %s", (user_id,))
-        alumni = cursor.fetchone()
-        if alumni:
-            response["graduation_year"] = alumni["GRADUATION_YEAR"]
-            response["degree_earned"] = alumni["DEGREE_EARNED"]
-            response["current_employer"] = alumni["CURRENT_EMPLOYER"]
-
-    return jsonify(response), 200
+        "picture_url": user["PICTURE_URL"]
+    }), 200
 
 
 @app.post("/api/profile/edit/")
@@ -489,13 +407,15 @@ def create_post():
 
     if not content or not content.strip():
         return jsonify({"error": "Post content is required"}), 400
+
     local_cursor = db.cursor(dictionary=True)
     local_cursor.execute(
         "INSERT INTO POSTS (AUTHOR_ID, CONTENT) VALUES (%s, %s)",
         (g.user_id, content)
     )
     db.commit()
-    local_cursor.close()   
+    local_cursor.close()
+
     return jsonify({"message": "Post created successfully"}), 201
 
 # Like a post
@@ -538,566 +458,54 @@ def unlike_post(post_id):
     local_cursor.close()
 
     return jsonify({"message": "Post unliked"}), 200
+
+# Get comments for a post
+@app.get("/api/posts/<int:post_id>/comments")
+def get_comments(post_id):
+    local_cursor = db.cursor(dictionary=True)
+    local_cursor.execute("""
+        SELECT 
+            C.COMMENT_ID,
+            C.POST_ID,
+            C.AUTHOR_ID,
+            U.USERNAME,
+            C.CONTENT,
+            C.TIMESTAMP
+        FROM COMMENTS C
+        JOIN USERS U ON C.AUTHOR_ID = U.USER_ID
+        WHERE C.POST_ID = %s
+        ORDER BY C.TIMESTAMP ASC
+    """, (post_id,))
     
-# =========================================================
-# ARIANNA: EVENTS FEATURE
-# =========================================================
-
-@app.get("/api/events")
-def get_events():
-    cursor.execute("""
-        SELECT
-            EventID AS id,
-            Title AS title,
-            Description AS description,
-            Location AS location,
-            DATE_FORMAT(StartDateTime, '%Y-%m-%d %H:%i:%s') AS startDateTime,
-            DATE_FORMAT(EndDateTime, '%Y-%m-%d %H:%i:%s') AS endDateTime,
-            PrivacyType AS privacyType,
-            EventStatus AS status,
-            CancellationReason AS cancellationReason
-        FROM Event
-        ORDER BY StartDateTime ASC
-    """)
-    events = cursor.fetchall()
-    return jsonify(events), 200
+    comments = local_cursor.fetchall()
+    local_cursor.close()
+    return jsonify(comments), 200
 
 
-@app.post("/api/events")
+# Create a comment on a post
+@app.post("/api/posts/<int:post_id>/comments")
 @login_required
-def create_event():
+def create_comment(post_id):
     data = request.get_json()
+    content = data.get("content")
 
-    title = data.get("title")
-    description = data.get("description")
-    location = data.get("location")
-    startDateTime = data.get("startDateTime")
-    endDateTime = data.get("endDateTime")
-    privacyType = data.get("privacyType", "Public")
+    if not content or not content.strip():
+        return jsonify({"error": "Comment content is required"}), 400
 
-    if not title or not location or not startDateTime or not endDateTime:
-        return jsonify({"error": "Missing required event fields."}), 400
-
-    try:
-        start_dt = datetime.fromisoformat(startDateTime)
-        end_dt = datetime.fromisoformat(endDateTime)
-    except ValueError:
-        return jsonify({"error": "Invalid event date format."}), 400
-
-    if end_dt <= start_dt:
-        return jsonify({"error": "End date/time must be after start date/time."}), 400
-
-    parameters = (
-        g.user_id,
-        None,
-        title,
-        description,
-        location,
-        start_dt,
-        end_dt,
-        privacyType
+    local_cursor = db.cursor(dictionary=True)
+    local_cursor.execute(
+        "INSERT INTO COMMENTS (POST_ID, AUTHOR_ID, CONTENT) VALUES (%s, %s, %s)",
+        (post_id, g.user_id, content)
     )
-
-    cursor.callproc("CreateEvent", parameters)
     db.commit()
+    local_cursor.close()
 
-    return jsonify({"message": "Event created successfully"}), 201
+    return jsonify({"message": "Comment created successfully"}), 201
 
-
-@app.put("/api/events/<int:event_id>")
-@login_required
-def update_event(event_id):
-    data = request.get_json()
-    
-    title = data.get("title")
-    description = data.get("description")
-    location = data.get("location")
-    startDateTime = data.get("startDateTime")
-    endDateTime = data.get("endDateTime")
-    privacyType = data.get("privacyType", "Public")
-
-    if not title or not location or not startDateTime or not endDateTime:
-        return jsonify({"error": "Missing required event fields."}), 400
-
-    try:
-        start_dt = datetime.fromisoformat(startDateTime)
-        end_dt = datetime.fromisoformat(endDateTime)
-    except ValueError:
-        return jsonify({"error": "Invalid event date format."}), 400
-
-    if end_dt <= start_dt:
-        return jsonify({"error": "End date/time must be after start date/time."}), 400
-
-    parameters = (
-        event_id,
-        None,
-        title,
-        description,
-        location,
-        start_dt,
-        end_dt,
-        privacyType
-    )
-
-    cursor.callproc("UpdateEvent", parameters)
-    db.commit()
-
-    return jsonify({"message": "Event updated successfully"}), 200
-
-
-@app.put("/api/events/<int:event_id>/cancel")
-@login_required
-def cancel_event(event_id):
-    data = request.get_json() or {}
-    cancellationReason = data.get("cancellationReason", "Cancelled by user")
-
-    parameters = (
-        event_id,
-        cancellationReason
-    )
-
-    cursor.callproc("CancelEvent", parameters)
-    db.commit()
-
-    return jsonify({"message": "Event cancelled successfully"}), 200
-
-
-@app.delete("/api/events/<int:event_id>")
-@login_required
-def delete_event(event_id):
-    parameters = (event_id,)
-    cursor.callproc("DeleteEvent", parameters)
-    db.commit()
-
-    return jsonify({"message": "Event deleted successfully"}), 200
-
-
-@app.post("/api/events/<int:event_id>/register")
-@login_required
-def register_for_event(event_id):
-    data = request.get_json()
-    rsvpStatus = data.get("rsvpStatus", "Going")
-
-    parameters = (
-        event_id,
-        g.user_id,
-        rsvpStatus
-    )
-
-    cursor.callproc("RegisterForEvent", parameters)
-    db.commit()
-
-    return jsonify({"message": "Registered for event successfully"}), 201
-
-
-@app.put("/api/events/<int:event_id>/register")
-@login_required
-def update_event_registration(event_id):
-    data = request.get_json()
-    rsvpStatus = data.get("rsvpStatus")
-    registrationStatus = data.get("registrationStatus", "Responded")
-
-    if not rsvpStatus:
-        return jsonify({"error": "Missing RSVP status."}), 400
-
-    parameters = (
-        event_id,
-        g.user_id,
-        rsvpStatus,
-        registrationStatus
-    )
-
-    cursor.callproc("UpdateEventRegistration", parameters)
-    db.commit()
-
-    return jsonify({"message": "Event registration updated successfully"}), 200
-
-
-
-# =========================================================
-# ARIANNA: JOB BOARD FEATURE
-# =========================================================
-
-@app.get("/api/jobs")
-def get_jobs():
-    cursor.execute("""
-        SELECT
-            JobPostingID AS id,
-            Title AS title,
-            Company AS company,
-            Location AS location,
-            Description AS description,
-            ApplicationMethod AS applicationMethod,
-            ApplicationURL AS applicationURL,
-            ContactEmail AS contactEmail,
-            DATE_FORMAT(Deadline, '%Y-%m-%d %H:%i:%s') AS deadline,
-            JobStatus AS status
-        FROM JobPosting
-        ORDER BY Deadline ASC
-    """)
-    jobs = cursor.fetchall()
-    return jsonify(jobs), 200
-
-
-@app.post("/api/jobs")
-@login_required
-def create_job():
-    data = request.get_json()
-
-    title = data.get("title")
-    company = data.get("company")
-    location = data.get("location")
-    description = data.get("description")
-    applicationMethod = data.get("applicationMethod")
-    applicationURL = data.get("applicationURL")
-    contactEmail = data.get("contactEmail")
-    deadline = data.get("deadline")
-
-    if not title or not company or not location or not description or not applicationMethod or not deadline:
-        return jsonify({"error": "Missing required job fields."}), 400
-
-    if applicationMethod == "Email" and not contactEmail:
-        return jsonify({"error": "Contact email is required for Email applications."}), 400
-
-    if applicationMethod == "External Link" and not applicationURL:
-        return jsonify({"error": "Application URL is required for External Link applications."}), 400
-
-    try:
-        deadline_dt = datetime.fromisoformat(deadline)
-    except ValueError:
-        return jsonify({"error": "Invalid deadline format."}), 400
-
-    parameters = (
-        g.user_id,
-        title,
-        company,
-        location,
-        description,
-        applicationMethod,
-        applicationURL,
-        contactEmail,
-        deadline_dt
-    )
-
-    cursor.callproc("CreateJobPosting", parameters)
-    db.commit()
-
-    return jsonify({"message": "Job created successfully"}), 201
-
-
-@app.put("/api/jobs/<int:job_id>")
-@login_required
-def update_job(job_id):
-    data = request.get_json()
-
-    title = data.get("title")
-    company = data.get("company")
-    location = data.get("location")
-    description = data.get("description")
-    applicationMethod = data.get("applicationMethod")
-    applicationURL = data.get("applicationURL")
-    contactEmail = data.get("contactEmail")
-    deadline = data.get("deadline")
-    status = data.get("status", "Active")
-
-    if not title or not company or not location or not description or not applicationMethod or not deadline:
-        return jsonify({"error": "Missing required job fields."}), 400
-
-    if applicationMethod == "Email" and not contactEmail:
-        return jsonify({"error": "Contact email is required for Email applications."}), 400
-
-    if applicationMethod == "External Link" and not applicationURL:
-        return jsonify({"error": "Application URL is required for External Link applications."}), 400
-
-    try:
-        deadline_dt = datetime.fromisoformat(deadline)
-    except ValueError:
-        return jsonify({"error": "Invalid deadline format."}), 400
-
-    parameters = (
-        job_id,
-        title,
-        company,
-        location,
-        description,
-        applicationMethod,
-        applicationURL,
-        contactEmail,
-        deadline_dt,
-        status
-    )
-
-    cursor.callproc("UpdateJobPosting", parameters)
-    db.commit()
-
-    return jsonify({"message": "Job updated successfully"}), 200
-
-
-@app.put("/api/jobs/<int:job_id>/close")
-@login_required
-def close_job(job_id):
-    parameters = (job_id,)
-    cursor.callproc("CloseJobPosting", parameters)
-    db.commit()
-
-    return jsonify({"message": "Job closed successfully"}), 200
-
-
-@app.delete("/api/jobs/<int:job_id>")
-@login_required
-def delete_job(job_id):
-    parameters = (job_id,)
-    cursor.callproc("DeleteJobPosting", parameters)
-    db.commit()
-
-    return jsonify({"message": "Job deleted successfully"}), 200
-
-
-@app.post("/api/jobs/<int:job_id>/apply")
-@login_required
-def apply_to_job(job_id):
-    data = request.get_json()
-
-    coverLetter = data.get("coverLetter", "")
-    resumeURL = data.get("resumeURL", "")
-
-    parameters = (
-        job_id,
-        g.user_id,
-        coverLetter,
-        resumeURL
-    )
-
-    cursor.callproc("ApplyToJob", parameters)
-    db.commit()
-
-    return jsonify({"message": "Applied to job successfully"}), 201
-
-
-@app.put("/api/job-applications/<int:application_id>")
-@login_required
-def update_job_application_status(application_id):
-    data = request.get_json()
-    applicationStatus = data.get("applicationStatus")
-
-    if not applicationStatus:
-        return jsonify({"error": "Missing application status."}), 400
-
-    parameters = (
-        application_id,
-        applicationStatus
-    )
-
-    cursor.callproc("UpdateJobApplicationStatus", parameters)
-    db.commit()
-
-    return jsonify({"message": "Job application status updated successfully"}), 200
-
-
-# =========================================================
-# ARIANNA: MENTORSHIP FEATURE
-# Database-backed using HGroup / GroupMember
-# =========================================================
-
-@app.get("/api/mentorships")
-def get_mentorships():
-    cursor.execute("""
-        SELECT
-            GroupID AS id,
-            GroupName AS name,
-            StudyCategory AS focusArea,
-            Description AS description,
-            PrivacyType AS privacyType,
-            IsActive AS isActive
-        FROM HGroup
-        ORDER BY GroupID ASC
-    """)
-    groups = cursor.fetchall()
-    return jsonify(groups), 200
-
-
-@app.post("/api/mentorships")
-@login_required
-def create_mentorship():
-    data = request.get_json()
-
-    name = data.get("name")
-    focusArea = data.get("focusArea")
-    description = data.get("description")
-    privacyType = data.get("privacyType", "Public")
-
-    if not name or not focusArea or not description:
-        return jsonify({"error": "Missing required mentorship fields."}), 400
-
-    parameters = (
-        g.user_id,
-        name,
-        focusArea,
-        description,
-        privacyType
-    )
-
-    cursor.callproc("CreateGroup", parameters)
-    db.commit()
-
-    return jsonify({"message": "Mentorship program created successfully"}), 201
-
-
-@app.put("/api/mentorships/<int:group_id>")
-@login_required
-def update_mentorship(group_id):
-    data = request.get_json()
-
-    name = data.get("name")
-    focusArea = data.get("focusArea")
-    description = data.get("description")
-    privacyType = data.get("privacyType", "Public")
-    isActive = data.get("isActive", True)
-
-    if not name or not focusArea or not description:
-        return jsonify({"error": "Missing required mentorship fields."}), 400
-
-    parameters = (
-        group_id,
-        name,
-        focusArea,
-        description,
-        privacyType,
-        isActive
-    )
-
-    cursor.callproc("UpdateGroup", parameters)
-    db.commit()
-
-    return jsonify({"message": "Mentorship program updated successfully"}), 200
-
-
-@app.put("/api/mentorships/<int:group_id>/deactivate")
-@login_required
-def deactivate_mentorship(group_id):
-    parameters = (group_id,)
-    cursor.callproc("DeactivateGroup", parameters)
-    db.commit()
-
-    return jsonify({"message": "Mentorship program deactivated successfully"}), 200
-
-
-@app.delete("/api/mentorships/<int:group_id>")
-@login_required
-def delete_mentorship(group_id):
-    parameters = (group_id,)
-    cursor.callproc("DeleteGroup", parameters)
-    db.commit()
-
-    return jsonify({"message": "Mentorship program deleted successfully"}), 200
-
-@app.get("/api/mentorship-requests")
-@login_required
-def get_mentor_requests():
-    cursor.execute("""
-        SELECT
-            gm.GroupID AS groupId,
-            gm.UserID AS userId,
-            u.NAME AS userName,
-            hg.GroupName AS groupName,
-            gm.RoleType AS roleType,
-            gm.MembershipStatus AS membershipStatus,
-            DATE_FORMAT(gm.JoinedAt, '%Y-%m-%d %H:%i:%s') AS joinedAt
-        FROM GroupMember gm
-        JOIN USERS u
-            ON gm.UserID = u.USER_ID
-        JOIN HGroup hg
-            ON gm.GroupID = hg.GroupID
-        ORDER BY gm.GroupID ASC, gm.UserID ASC
-    """)
-    requests_data = cursor.fetchall()
-    return jsonify(requests_data), 200
-
-
-@app.post("/api/mentorship-requests")
-@login_required
-def create_mentor_request():
-    data = request.get_json()
-
-    groupID = data.get("groupID")
-    roleType = data.get("roleType", "Member")
-    membershipStatus = data.get("membershipStatus", "Pending")
-
-    if not groupID:
-        return jsonify({"error": "Missing groupID for mentorship request."}), 400
-
-    parameters = (
-        int(groupID),
-        g.user_id,
-        roleType,
-        membershipStatus
-    )
-
-    cursor.callproc("AddGroupMember", parameters)
-    db.commit()
-
-    return jsonify({"message": "Mentorship request submitted successfully"}), 201
-
-
-@app.put("/api/mentorship-requests")
-@login_required
-def update_mentor_request():
-    data = request.get_json()
-
-    groupID = data.get("groupID")
-    userID = data.get("userID")
-    roleType = data.get("roleType", "Member")
-    membershipStatus = data.get("membershipStatus")
-
-    if not groupID or not userID or not membershipStatus:
-        return jsonify({"error": "Missing required mentorship request fields."}), 400
-
-    parameters = (
-        int(groupID),
-        int(userID),
-        roleType,
-        membershipStatus
-    )
-
-    cursor.callproc("UpdateGroupMemberStatus", parameters)
-    db.commit()
-
-    return jsonify({"message": "Mentorship request updated successfully"}), 200
-
-
-@app.delete("/api/mentorship-requests")
-@login_required
-def remove_mentor_request():
-    data = request.get_json()
-
-    groupID = data.get("groupID")
-    userID = data.get("userID")
-
-    if not groupID or not userID:
-        return jsonify({"error": "Missing groupID or userID."}), 400
-
-    parameters = (
-        int(groupID),
-        int(userID)
-    )
-
-    cursor.callproc("RemoveGroupMember", parameters)
-    db.commit()
-
-    return jsonify({"message": "Mentorship request removed successfully"}), 200
-
-
-
-@app.get("/api/health")
-def health_check():
-    return jsonify({"message": "Backend is running"}), 200
 
 if __name__ == "__main__":
-    socketio.run(
-        app,
+    app.run(
         host='localhost',
         port=5000,
-        ssl_context=(os.getenv('FRONTEND_CERT_PATH'), os.getenv('FRONTEND_KEY_PATH')),
         debug=True
     )
-    

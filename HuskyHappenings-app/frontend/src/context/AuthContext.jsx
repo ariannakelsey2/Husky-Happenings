@@ -1,23 +1,23 @@
-import {createContext, useContext, useState, useEffect} from "react";
+import { createContext, useContext, useState, useEffect } from "react";
 
 const AuthContext = createContext(null);
 
-export function useAuth(){
+export function useAuth() {
   return useContext(AuthContext);
 }
 
 // Handles authentication of users session
-export function AuthProvider({children}) {
+export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
     async function checkSession() {
       try {
-        const response = await fetch("https://localhost:5000/api/me", {
+        const response = await fetch("http://localhost:5000/api/me", {
           method: "GET",
           credentials: "include",
-       });
+        });
 
         if (!response.ok) {
           setCurrentUser(null);
@@ -32,8 +32,7 @@ export function AuthProvider({children}) {
     }
 
     checkSession();
-  },
-[]);
+  }, []);
 
   const login = async (userData = null) => {
     if (userData) {
@@ -42,7 +41,7 @@ export function AuthProvider({children}) {
     }
 
     try {
-      const response = await fetch("https://localhost:5000/api/me", {
+      const response = await fetch("http://localhost:5000/api/me", {
         method: "GET",
         credentials: "include",
       });
@@ -60,7 +59,7 @@ export function AuthProvider({children}) {
 
   const logout = async () => {
     try {
-      await fetch("https://localhost:5000/api/logout", {
+      await fetch("http://localhost:5000/api/logout", {
         method: "POST",
         credentials: "include",
       });
@@ -69,8 +68,14 @@ export function AuthProvider({children}) {
       setCurrentUser(null);
     }
   };
-  
-  const isAuthenticated = !!currentUser
 
-  return (<AuthContext.Provider  value={{ loading, currentUser, isAuthenticated, login, logout, }}> {children} </AuthContext.Provider>);
+  const isAuthenticated = !!currentUser;
+
+  return (
+    <AuthContext.Provider
+      value={{ loading, currentUser, isAuthenticated, login, logout }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 }

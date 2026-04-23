@@ -26,7 +26,7 @@ export default function Messages() {
   useEffect(() => {
     async function loadConversations() {
       try {
-        const response = await fetch("https://localhost:5000/api/conversations", {
+        const response = await fetch("http://localhost:5000/api/conversations", {
           credentials: "include",
         });
 
