@@ -49,9 +49,7 @@ export default function Groups() {
     try {
       const response = await fetch("https://localhost:5000/api/groups", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
           groupName,
@@ -66,12 +64,10 @@ export default function Groups() {
 
       try {
         data = JSON.parse(text);
-      } catch {
-        data = {};
-      }
+      } catch {}
 
       if (response.ok) {
-        setMessage("Group created successfully");
+        setMessage("Group created successfully!");
         setGroupName("");
         setDescription("");
         setStudyCategory("");
@@ -98,10 +94,10 @@ export default function Groups() {
 
     try {
       const response = await fetch(
-        `https://localhost:5000/api/groups/search?q=${encodeURIComponent(searchTerm)}`,
-        {
-          credentials: "include",
-        }
+        `https://localhost:5000/api/groups/search?q=${encodeURIComponent(
+          searchTerm
+        )}`,
+        { credentials: "include" }
       );
 
       const data = await response.json();
@@ -121,10 +117,13 @@ export default function Groups() {
     setMessage("");
 
     try {
-      const response = await fetch(`https://localhost:5000/api/groups/${groupId}/join`, {
-        method: "POST",
-        credentials: "include",
-      });
+      const response = await fetch(
+        `https://localhost:5000/api/groups/${groupId}/join`,
+        {
+          method: "POST",
+          credentials: "include",
+        }
+      );
 
       const data = await response.json();
 
@@ -141,107 +140,223 @@ export default function Groups() {
   };
 
   return (
-    <div className="groups-page">
-      <h2>Groups</h2>
+    <main className="groups-page">
+      <section className="groups-hero">
+        <div>
+          <p className="groups-eyebrow">Campus Groups</p>
+          <h1>Find your people on campus</h1>
+          <p>
+            Create study groups, join campus communities, and connect with other
+            students who share your interests.
+          </p>
+        </div>
+      </section>
 
-      {error && <p className="groups-error">{error}</p>}
-      {message && <p className="groups-message">{message}</p>}
+      {error && <div className="alert alert-error">{error}</div>}
+      {message && <div className="alert alert-success">{message}</div>}
 
-      <section className="groups-section">
-        <h3>Create a Group</h3>
+      <section className="groups-section create-section">
+        <div className="section-heading">
+          <div>
+            <h2>Start a new group</h2>
+          </div>
+        </div>
+
         <form className="group-form" onSubmit={handleCreateGroup}>
-          <input
-            type="text"
-            placeholder="Group title"
-            value={groupName}
-            onChange={(e) => setGroupName(e.target.value)}
-          />
+          <div className="group-form-row">
+            <div className="form-group">
+              <label className="form-label">Group Name</label>
+              <input
+                className="input-field"
+                type="text"
+                placeholder="CS Study Squad"
+                value={groupName}
+                onChange={(e) => setGroupName(e.target.value)}
+              />
+            </div>
 
-          <input
-            type="text"
-            placeholder="Study category"
-            value={studyCategory}
-            onChange={(e) => setStudyCategory(e.target.value)}
-          />
+            <div className="form-group">
+              <label className="form-label">Study Category</label>
+              <input
+                className="input-field"
+                type="text"
+                placeholder="Computer Science"
+                value={studyCategory}
+                onChange={(e) => setStudyCategory(e.target.value)}
+              />
+            </div>
+          </div>
 
-          <textarea
-            placeholder="Group description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows="4"
-          />
+          <div className="form-group">
+            <label className="form-label">Description</label>
+            <textarea
+              className="input-field textarea-field"
+              placeholder="What is this group about?"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+            />
+          </div>
 
-          <select
-            value={privacyType}
-            onChange={(e) => setPrivacyType(e.target.value)}
-          >
-            <option value="Public">Public</option>
-            <option value="Private">Private</option>
-          </select>
+          <div className="form-actions">
+            <div className="form-group privacy-select">
+              <label className="form-label">Privacy</label>
+              <select
+                className="input-field"
+                value={privacyType}
+                onChange={(e) => setPrivacyType(e.target.value)}
+              >
+                <option value="Public">Public</option>
+                <option value="Private">Private</option>
+              </select>
+            </div>
 
-          <button type="submit">Create Group</button>
+            <button type="submit" className="btn btn-primary">
+              Create Group
+            </button>
+          </div>
         </form>
       </section>
 
       <section className="groups-section">
-        <h3>My Groups</h3>
+        <div className="section-heading">
+          <div>
+            <p className="section-kicker">Memberships</p>
+            <h2>My Groups</h2>
+          </div>
+        </div>
+
         {myGroups.length === 0 ? (
-          <p>You are not in any groups yet.</p>
+          <div className="empty-state">
+            <div className="empty-icon">HH</div>
+            <h3>No groups yet</h3>
+            <p>Join or create a group to start building your campus network.</p>
+          </div>
         ) : (
           <div className="groups-list">
             {myGroups.map((group) => (
-              <div key={group.GroupID} className="group-card">
-                <h4>{group.GroupName}</h4>
-                <p><strong>Category:</strong> {group.StudyCategory}</p>
-                <p><strong>Privacy:</strong> {group.PrivacyType}</p>
-                <p><strong>Role:</strong> {group.RoleType}</p>
-                <p>{group.Description}</p>
-              </div>
+              <article key={group.GroupID} className="group-card">
+                <div className="group-card-header">
+                  <div className="group-avatar">
+                    {group.GroupName?.charAt(0).toUpperCase()}
+                  </div>
+
+                  <div>
+                    <h3 className="group-card-name">{group.GroupName}</h3>
+                    <p className="group-card-category">
+                      {group.StudyCategory}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="group-card-meta">
+                  <span
+                    className={`badge ${
+                      group.PrivacyType === "Private"
+                        ? "badge-private"
+                        : "badge-public"
+                    }`}
+                  >
+                    {group.PrivacyType}
+                  </span>
+
+                  <span className="badge badge-role">{group.RoleType}</span>
+                </div>
+
+                <p className="group-card-description">{group.Description}</p>
+              </article>
             ))}
           </div>
         )}
       </section>
 
       <section className="groups-section">
-        <h3>Search Groups</h3>
+        <div className="section-heading">
+          <div>
+            <p className="section-kicker">Discover</p>
+            <h2>Find Groups</h2>
+          </div>
+        </div>
 
         <div className="group-search-bar">
           <input
+            className="input-field"
             type="text"
-            placeholder="Search groups by title or category"
+            placeholder="Search by group name or category..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearchGroups()}
           />
-          <button onClick={handleSearchGroups}>Search</button>
+
+          <button className="btn btn-primary" onClick={handleSearchGroups}>
+            Search
+          </button>
         </div>
 
         {searchResults.length > 0 && (
           <div className="groups-list">
             {searchResults.map((group) => (
-              <div key={group.GroupID} className="group-card">
-                <h4>{group.GroupName}</h4>
-                <p><strong>Category:</strong> {group.StudyCategory}</p>
-                <p><strong>Privacy:</strong> {group.PrivacyType}</p>
-                <p>{group.Description}</p>
+              <article key={group.GroupID} className="group-card">
+                <div className="group-card-header">
+                  <div className="group-avatar">
+                    {group.GroupName?.charAt(0).toUpperCase()}
+                  </div>
 
-                {group.CurrentUserStatus === "Accepted" ? (
-                  <button disabled>Joined</button>
-                ) : group.CurrentUserStatus === "Pending" ? (
-                  <button disabled>Request Pending</button>
-                ) : (
-                  <button onClick={() => handleJoinGroup(group.GroupID)}>
-                    {group.PrivacyType === "Private" ? "Request to Join" : "Join Group"}
-                  </button>
-                )}
-              </div>
+                  <div>
+                    <h3 className="group-card-name">{group.GroupName}</h3>
+                    <p className="group-card-category">
+                      {group.StudyCategory}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="group-card-meta">
+                  <span
+                    className={`badge ${
+                      group.PrivacyType === "Private"
+                        ? "badge-private"
+                        : "badge-public"
+                    }`}
+                  >
+                    {group.PrivacyType}
+                  </span>
+                </div>
+
+                <p className="group-card-description">{group.Description}</p>
+
+                <div className="group-card-footer">
+                  {group.CurrentUserStatus === "Accepted" ? (
+                    <button className="btn btn-secondary btn-sm" disabled>
+                      Joined
+                    </button>
+                  ) : group.CurrentUserStatus === "Pending" ? (
+                    <button className="btn btn-secondary btn-sm" disabled>
+                      Request Pending
+                    </button>
+                  ) : (
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleJoinGroup(group.GroupID)}
+                    >
+                      {group.PrivacyType === "Private"
+                        ? "Request to Join"
+                        : "Join Group"}
+                    </button>
+                  )}
+                </div>
+              </article>
             ))}
           </div>
         )}
 
         {searchTerm.trim() && searchResults.length === 0 && (
-          <p>No matching groups found.</p>
+          <div className="empty-state">
+            <div className="empty-icon">?</div>
+            <h3>No groups found</h3>
+            <p>No groups matched "{searchTerm}". Try another search.</p>
+          </div>
         )}
       </section>
-    </div>
+    </main>
   );
 }
