@@ -53,6 +53,25 @@ def login_required(f):
     return decorated_function
 
 
+# Creates a notification for a user when another user interacts with their content
+# Author: Sophia Priola
+def create_notification(recipient_user_id, trigger_user_id, notification_type, message, related_post_id=None):
+    if recipient_user_id == trigger_user_id:
+        return
+
+    local_cursor = db.cursor(dictionary=True)
+    local_cursor.execute(
+        """
+        INSERT INTO NOTIFICATION
+        (RecipientUserID, TriggerUserID, Type, Message, RelatedPostID)
+        VALUES (%s, %s, %s, %s, %s)
+        """,
+        (recipient_user_id, trigger_user_id, notification_type, message, related_post_id)
+    )
+    db.commit()
+    local_cursor.close()
+
+
 # Signup allows a new user to be added to the database corresponding to the provided user data
 # Author: Ashley Pike
 @app.post("/api/signup")
@@ -197,6 +216,31 @@ def me():
     }), 200
 
 
+# Returns all accepted groups the current user belongs to
+# Author: Sophia Priola
+@app.get("/api/my-groups")
+@login_required
+def get_my_groups():
+    local_cursor = db.cursor(dictionary=True)
+    local_cursor.execute(
+        """
+        SELECT hg.GroupID, hg.GroupName, hg.StudyCategory
+        FROM GroupMember gm
+        JOIN HGroup hg
+            ON gm.GroupID = hg.GroupID
+        WHERE gm.UserID = %s
+          AND gm.MembershipStatus = 'Accepted'
+          AND hg.IsActive = TRUE
+        ORDER BY hg.GroupName ASC
+        """,
+        (g.user_id,)
+    )
+    groups = local_cursor.fetchall()
+    local_cursor.close()
+
+    return jsonify(groups), 200
+
+
 @app.post("/api/conversations")
 @login_required
 def create_conversation():
@@ -229,7 +273,7 @@ def get_conversations():
     cursor.execute("""
         SELECT
             c.CONVERSATION_ID AS conversation_id,
-            CASE 
+            CASE
                 WHEN c.NAME IS NOT NULL THEN c.NAME
                 WHEN COUNT(cm2.USER_ID) = 1 THEN u.USERNAME
                 ELSE CONCAT('Group (', COUNT(cm2.USER_ID), ' members)')
@@ -381,12 +425,14 @@ def edit_profile():
     return jsonify({"message": "Profile updated successfully."}), 200
 
 
-# This function returns all posts to the feed
+# This function returns all posts visible to the logged-in user's groups
+# and also the user's own personal posts
 # Author: Sophia Priola
 @app.get("/api/posts")
+@login_required
 def get_posts():
     local_cursor = db.cursor(dictionary=True)
-    local_cursor.callproc("GET_POSTS")
+    local_cursor.callproc("GET_POSTS", (g.user_id,))
 
     posts = []
     for result in local_cursor.stored_results():
@@ -401,21 +447,44 @@ def get_posts():
 def create_post():
     data = request.get_json()
     content = data.get("content")
+    group_id = data.get("groupId")
 
     if not content or not content.strip():
         return jsonify({"error": "Post content is required"}), 400
 
     local_cursor = db.cursor(dictionary=True)
-    local_cursor.execute(
-        "INSERT INTO POSTS (AUTHOR_ID, CONTENT) VALUES (%s, %s)",
-        (g.user_id, content)
-    )
+
+    if group_id:
+        local_cursor.execute(
+            """
+            SELECT 1
+            FROM GroupMember
+            WHERE GroupID = %s AND UserID = %s AND MembershipStatus = 'Accepted'
+            """,
+            (group_id, g.user_id)
+        )
+        member = local_cursor.fetchone()
+
+        if not member:
+            local_cursor.close()
+            return jsonify({"error": "You are not a member of this group"}), 403
+
+        local_cursor.execute(
+            "INSERT INTO POSTS (AUTHOR_ID, CONTENT, GroupID) VALUES (%s, %s, %s)",
+            (g.user_id, content, group_id)
+        )
+    else:
+        local_cursor.execute(
+            "INSERT INTO POSTS (AUTHOR_ID, CONTENT, GroupID) VALUES (%s, %s, NULL)",
+            (g.user_id, content)
+        )
+
     db.commit()
     local_cursor.close()
 
     return jsonify({"message": "Post created successfully"}), 201
 
-# Author: Sophia Priola
+
 # Like a post
 @app.post("/api/posts/<int:post_id>/like")
 @login_required
@@ -436,12 +505,33 @@ def like_post(post_id):
         "INSERT INTO LIKES (USER_ID, POST_ID) VALUES (%s, %s)",
         (g.user_id, post_id)
     )
+
+    local_cursor.execute(
+        """
+        SELECT p.AUTHOR_ID, u.USERNAME
+        FROM POSTS p
+        JOIN USERS u ON u.USER_ID = %s
+        WHERE p.POST_ID = %s
+        """,
+        (g.user_id, post_id)
+    )
+    post_info = local_cursor.fetchone()
+
     db.commit()
     local_cursor.close()
 
+    if post_info:
+        create_notification(
+            recipient_user_id=post_info["AUTHOR_ID"],
+            trigger_user_id=g.user_id,
+            notification_type="like",
+            message=f'{post_info["USERNAME"]} liked your post',
+            related_post_id=post_id
+        )
+
     return jsonify({"message": "Post liked"}), 201
 
-# Author: Sophia Priola
+
 # Unlike a post
 @app.delete("/api/posts/<int:post_id>/like")
 @login_required
@@ -457,8 +547,8 @@ def unlike_post(post_id):
 
     return jsonify({"message": "Post unliked"}), 200
 
-# Author: Sophia Priola
-# Allows users to share posts
+
+# Share a post
 @app.post("/api/posts/<int:post_id>/share")
 @login_required
 def share_post(post_id):
@@ -468,8 +558,13 @@ def share_post(post_id):
     local_cursor = db.cursor(dictionary=True)
 
     local_cursor.execute(
-        "SELECT POST_ID FROM POSTS WHERE POST_ID = %s",
-        (post_id,)
+        """
+        SELECT p.POST_ID, p.AUTHOR_ID, p.GroupID, u.USERNAME
+        FROM POSTS p
+        JOIN USERS u ON u.USER_ID = %s
+        WHERE p.POST_ID = %s
+        """,
+        (g.user_id, post_id)
     )
     original_post = local_cursor.fetchone()
 
@@ -478,21 +573,35 @@ def share_post(post_id):
         return jsonify({"error": "Original post not found"}), 404
 
     local_cursor.execute(
-        "INSERT INTO POSTS (AUTHOR_ID, CONTENT, SHARED_POST_ID) VALUES (%s, %s, %s)",
-        (g.user_id, content if content else "", post_id)
+        """
+        INSERT INTO POSTS (AUTHOR_ID, CONTENT, SHARED_POST_ID, GroupID)
+        VALUES (%s, %s, %s, %s)
+        """,
+        (g.user_id, content if content else "", post_id, original_post["GroupID"])
     )
+
     db.commit()
     local_cursor.close()
 
+    if original_post["GroupID"] is not None:
+        create_notification(
+            recipient_user_id=original_post["AUTHOR_ID"],
+            trigger_user_id=g.user_id,
+            notification_type="share",
+            message=f'{original_post["USERNAME"]} shared your post',
+            related_post_id=post_id
+        )
+
     return jsonify({"message": "Post shared successfully"}), 201
 
-# Author: Sophia Priola
+
 # Get comments for a post
 @app.get("/api/posts/<int:post_id>/comments")
+@login_required
 def get_comments(post_id):
     local_cursor = db.cursor(dictionary=True)
     local_cursor.execute("""
-        SELECT 
+        SELECT
             C.COMMENT_ID,
             C.POST_ID,
             C.AUTHOR_ID,
@@ -509,7 +618,7 @@ def get_comments(post_id):
     local_cursor.close()
     return jsonify(comments), 200
 
-#
+
 # Create a comment on a post
 @app.post("/api/posts/<int:post_id>/comments")
 @login_required
@@ -525,10 +634,100 @@ def create_comment(post_id):
         "INSERT INTO COMMENTS (POST_ID, AUTHOR_ID, CONTENT) VALUES (%s, %s, %s)",
         (post_id, g.user_id, content)
     )
+
+    local_cursor.execute(
+        """
+        SELECT p.AUTHOR_ID, p.GroupID, u.USERNAME
+        FROM POSTS p
+        JOIN USERS u ON u.USER_ID = %s
+        WHERE p.POST_ID = %s
+        """,
+        (g.user_id, post_id)
+    )
+    post_info = local_cursor.fetchone()
+
     db.commit()
     local_cursor.close()
 
+    if post_info and post_info["GroupID"] is not None:
+        create_notification(
+            recipient_user_id=post_info["AUTHOR_ID"],
+            trigger_user_id=g.user_id,
+            notification_type="comment",
+            message=f'{post_info["USERNAME"]} commented on your post',
+            related_post_id=post_id
+        )
+
     return jsonify({"message": "Comment created successfully"}), 201
+
+
+# Get notifications for the logged-in user
+@app.get("/api/notifications")
+@login_required
+def get_notifications():
+    local_cursor = db.cursor(dictionary=True)
+    local_cursor.execute(
+        """
+        SELECT
+            n.NotificationID,
+            n.RecipientUserID,
+            n.TriggerUserID,
+            n.Type,
+            n.Message,
+            n.IsRead,
+            n.RelatedPostID,
+            n.CreatedAt,
+            u.USERNAME AS TriggerUsername
+        FROM NOTIFICATION n
+        JOIN USERS u
+            ON n.TriggerUserID = u.USER_ID
+        WHERE n.RecipientUserID = %s
+        ORDER BY n.CreatedAt DESC
+        """,
+        (g.user_id,)
+    )
+    notifications = local_cursor.fetchall()
+    local_cursor.close()
+
+    return jsonify(notifications), 200
+
+
+# Mark one notification as read
+@app.post("/api/notifications/<int:notification_id>/read")
+@login_required
+def mark_notification_read(notification_id):
+    local_cursor = db.cursor(dictionary=True)
+    local_cursor.execute(
+        """
+        UPDATE NOTIFICATION
+        SET IsRead = TRUE
+        WHERE NotificationID = %s AND RecipientUserID = %s
+        """,
+        (notification_id, g.user_id)
+    )
+    db.commit()
+    local_cursor.close()
+
+    return jsonify({"message": "Notification marked as read"}), 200
+
+
+# Mark all notifications as read
+@app.post("/api/notifications/read-all")
+@login_required
+def mark_all_notifications_read():
+    local_cursor = db.cursor(dictionary=True)
+    local_cursor.execute(
+        """
+        UPDATE NOTIFICATION
+        SET IsRead = TRUE
+        WHERE RecipientUserID = %s
+        """,
+        (g.user_id,)
+    )
+    db.commit()
+    local_cursor.close()
+
+    return jsonify({"message": "All notifications marked as read"}), 200
 
 
 if __name__ == "__main__":
