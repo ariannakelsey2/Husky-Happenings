@@ -348,11 +348,44 @@ def send_message(conversation_id):
     if not body:
         return jsonify({"error": "Message body required"}), 400
 
+    # insert the message
     cursor.execute(
         "INSERT INTO MESSAGE (CONVERSATION_ID, SENDER_ID, CONTENT) VALUES (%s, %s, %s)",
         (conversation_id, g.user_id, body)
     )
+
+    # get the sender's username
+    cursor.execute(
+        "SELECT USERNAME FROM USERS WHERE USER_ID = %s",
+        (g.user_id,)
+    )
+    sender = cursor.fetchone()
+
+    # get all other members of the conversation
+    cursor.execute(
+        """
+        SELECT USER_ID
+        FROM CONVERSATION_MEMBERS
+        WHERE CONVERSATION_ID = %s
+          AND USER_ID != %s
+        """,
+        (conversation_id, g.user_id)
+    )
+    recipients = cursor.fetchall()
+
     db.commit()
+
+    # create one notification for each recipient
+    if sender:
+        for recipient in recipients:
+            create_notification(
+                recipient_user_id=recipient["USER_ID"],
+                trigger_user_id=g.user_id,
+                notification_type="message",
+                message=f'{sender["USERNAME"]} sent you a message',
+                related_post_id=None
+            )
+
     return jsonify({"message": "Message sent"}), 201
 
 
