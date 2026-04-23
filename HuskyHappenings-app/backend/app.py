@@ -502,6 +502,33 @@ def create_comment(post_id):
 
     return jsonify({"message": "Comment created successfully"}), 201
 
+@app.post("/api/posts/<int:post_id>/share")
+@login_required
+def share_post(post_id):
+    data = request.get_json() or {}
+    content = data.get("content", "").strip()
+
+    local_cursor = db.cursor(dictionary=True)
+
+    local_cursor.execute(
+        "SELECT POST_ID FROM POSTS WHERE POST_ID = %s",
+        (post_id,)
+    )
+    original_post = local_cursor.fetchone()
+
+    if not original_post:
+        local_cursor.close()
+        return jsonify({"error": "Original post not found"}), 404
+
+    local_cursor.execute(
+        "INSERT INTO POSTS (AUTHOR_ID, CONTENT, SHARED_POST_ID) VALUES (%s, %s, %s)",
+        (g.user_id, content if content else "", post_id)
+    )
+    db.commit()
+    local_cursor.close()
+
+    return jsonify({"message": "Post shared successfully"}), 201
+
 
 if __name__ == "__main__":
     app.run(

@@ -1,14 +1,25 @@
 import { useEffect, useState } from "react";
 
-export default function Post({ postId, author, content, time, likeCount, onRefresh }) {
+export default function Post({
+  postId,
+  author,
+  content,
+  time,
+  likeCount,
+  onRefresh,
+  sharedPostId,
+  originalContent,
+  originalAuthor,
+}) {
   const [loading, setLoading] = useState(false);
+  const [shareLoading, setShareLoading] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [comments, setComments] = useState([]);
 
   const loadComments = async () => {
     try {
-      const response = await fetch(`http://localhost:5000/api/posts/${postId}/comments`, {
+      const response = await fetch(`https://localhost:5000/api/posts/${postId}/comments`, {
         credentials: "include",
       });
 
@@ -34,7 +45,7 @@ export default function Post({ postId, author, content, time, likeCount, onRefre
     try {
       setLoading(true);
 
-      const response = await fetch(`http://localhost:5000/api/posts/${postId}/like`, {
+      const response = await fetch(`https://localhost:5000/api/posts/${postId}/like`, {
         method: "POST",
         credentials: "include",
       });
@@ -53,13 +64,40 @@ export default function Post({ postId, author, content, time, likeCount, onRefre
     }
   };
 
+  const handleShare = async () => {
+    try {
+      setShareLoading(true);
+
+      const response = await fetch(`https://localhost:5000/api/posts/${postId}/share`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({ content: "" }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error(data.error || "Failed to share post");
+      } else {
+        onRefresh();
+      }
+    } catch (error) {
+      console.error("Network error:", error);
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
   const handleCommentSubmit = async (e) => {
     e.preventDefault();
 
     if (!commentText.trim()) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/posts/${postId}/comments`, {
+      const response = await fetch(`https://localhost:5000/api/posts/${postId}/comments`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -93,15 +131,41 @@ export default function Post({ postId, author, content, time, likeCount, onRefre
       }}
     >
       <div style={{ marginBottom: "8px" }}>
-        <h3 style={{ margin: "0", fontSize: "18px" }}>{author}</h3>
+        {sharedPostId ? (
+          <h3 style={{ margin: "0", fontSize: "18px" }}>
+            {author} shared {originalAuthor}'s post
+          </h3>
+        ) : (
+          <h3 style={{ margin: "0", fontSize: "18px" }}>{author}</h3>
+        )}
+
         <p style={{ margin: "4px 0 0 0", color: "gray", fontSize: "14px" }}>
           {time}
         </p>
       </div>
 
-      <p style={{ margin: "12px 0", fontSize: "16px", lineHeight: "1.5" }}>
-        {content}
-      </p>
+      {content && content.trim() !== "" && (
+        <p style={{ margin: "12px 0", fontSize: "16px", lineHeight: "1.5" }}>
+          {content}
+        </p>
+      )}
+
+      {sharedPostId && (
+        <div
+          style={{
+            border: "1px solid #ccc",
+            borderRadius: "10px",
+            padding: "12px",
+            marginTop: "12px",
+            backgroundColor: "#f9f9f9",
+          }}
+        >
+          <p style={{ margin: "0 0 8px 0", fontWeight: "bold" }}>
+            Original post by {originalAuthor}
+          </p>
+          <p style={{ margin: 0 }}>{originalContent}</p>
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: "16px", marginTop: "12px", alignItems: "center" }}>
         <button onClick={handleLike} disabled={loading}>
@@ -111,7 +175,9 @@ export default function Post({ postId, author, content, time, likeCount, onRefre
         <button onClick={() => setShowComments(!showComments)}>
           {showComments ? "Hide Comments" : "Comment"}
         </button>
-        <button>Share</button>
+        <button onClick={handleShare} disabled={shareLoading}>
+          {shareLoading ? "Sharing..." : "Share"}
+        </button>
       </div>
 
       {showComments && (

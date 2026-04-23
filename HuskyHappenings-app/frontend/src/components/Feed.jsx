@@ -8,7 +8,7 @@ export default function Feed() {
 
   async function loadPosts() {
     try {
-      const response = await fetch("http://localhost:5000/api/posts", {
+      const response = await fetch("https://localhost:5000/api/posts", {
         credentials: "include",
       });
 
@@ -59,11 +59,14 @@ export default function Feed() {
         <Post
           key={post.POST_ID}
           postId={post.POST_ID}
-          author={post.USERNAME}
+          author={post.AUTHOR}
           content={post.CONTENT}
           time={post.CREATED_AT}
-          likeCount={post.LIKE_COUNT}
+          likeCount={post.LIKE_COUNT || 0}
           onRefresh={loadPosts}
+          sharedPostId={post.SHARED_POST_ID}
+          originalContent={post.ORIGINAL_CONTENT}
+          originalAuthor={post.ORIGINAL_AUTHOR}
         />
       ))}
     </div>
