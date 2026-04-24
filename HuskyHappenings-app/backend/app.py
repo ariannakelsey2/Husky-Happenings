@@ -584,9 +584,77 @@ def unlike_post(post_id):
 # Share a post
 @app.post("/api/posts/<int:post_id>/share")
 @login_required
-def share_post(post_id):
+def update_event(event_id):
+    if not is_event_creator(event_id, g.user_id):
+        return jsonify({"error": "Only the creator can edit this event."}), 403
+
+    data = request.get_json()
+
+    title = data.get("title")
+    description = data.get("description")
+    location = data.get("location")
+    startDateTime = data.get("startDateTime")
+    endDateTime = data.get("endDateTime")
+    privacyType = data.get("privacyType", "Public")
+
+    if not title or not location or not startDateTime or not endDateTime:
+        return jsonify({"error": "Missing required event fields."}), 400
+
+    try:
+        start_dt = datetime.fromisoformat(startDateTime)
+        end_dt = datetime.fromisoformat(endDateTime)
+    except ValueError:
+        return jsonify({"error": "Invalid event date format."}), 400
+
+    if end_dt <= start_dt:
+        return jsonify({"error": "End must be after start."}), 400
+
+    if start_dt <= datetime.now():
+        return jsonify({"error": "Event must be scheduled in the future."}), 400
+
+    parameters = (
+        event_id,
+        None,
+        title,
+        description,
+        location,
+        start_dt,
+        end_dt,
+        privacyType
+    )
+
+    cursor.callproc("UpdateEvent", parameters)
+    db.commit()
+
+    return jsonify({"message": "Event updated successfully"}), 200
+
+
+@app.put("/api/events/<int:event_id>/cancel")
+@login_required
+def cancel_event(event_id):
+    if not is_event_creator(event_id, g.user_id):
+        return jsonify({"error": "Only the creator can cancel this event."}), 403
+
     data = request.get_json() or {}
-    content = data.get("content", "").strip()
+    cancellationReason = data.get("cancellationReason", "Cancelled by user")
+
+    cursor.callproc("CancelEvent", (event_id, cancellationReason))
+    db.commit()
+
+    return jsonify({"message": "Event cancelled successfully"}), 200
+
+
+@app.delete("/api/events/<int:event_id>")
+@login_required
+def delete_event(event_id):
+    if not is_event_creator(event_id, g.user_id):
+        return jsonify({"error": "Only the creator can delete this event."}), 403
+
+    cursor.callproc("DeleteEvent", (event_id,))
+    db.commit()
+
+    return jsonify({"message": "Event deleted successfully"}), 200
+
 
     local_cursor = db.cursor(dictionary=True)
 
@@ -762,6 +830,12 @@ def mark_all_notifications_read():
 
     return jsonify({"message": "All notifications marked as read"}), 200
 
+    return jsonify({"message": "Mentorship request removed successfully"}), 200
+
+
+@app.get("/api/health")
+def health_check():
+    return jsonify({"message": "Backend is running"}), 200
 
 if __name__ == "__main__":
     app.run(
@@ -770,3 +844,7 @@ if __name__ == "__main__":
         debug=True,
         ssl_context="adhoc"
     )
+        ssl_context=(os.getenv('FRONTEND_CERT_PATH'), os.getenv('FRONTEND_KEY_PATH')),
+        debug=True
+    )
+    
