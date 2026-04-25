@@ -12,8 +12,8 @@ import secrets
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True, origins=["http://localhost:5173"])
-socketio = SocketIO(app, cors_allowed_origins="http://localhost:5173")
+CORS(app, supports_credentials=True, origins=["https://localhost:5173"])
+socketio = SocketIO(app, cors_allowed_origins="https://localhost:5173")
 
 
 # Connects the backend to the MySQL database
@@ -149,7 +149,7 @@ def login():
         "token",
         token,
         expires=expires_at,
-        secure=False,
+        secure=True,
         httponly=True,
         samesite="Lax"
     )
@@ -174,7 +174,7 @@ def logout():
         db.commit()
 
     response = jsonify({"message": "Logged out"})
-    response.set_cookie("token", "", expires=0, secure=False, httponly=True, samesite="Lax")
+    response.set_cookie("token", "", expires=0, secure=True, httponly=True, samesite="Lax")
     return response, 200
 
 
@@ -2070,5 +2070,6 @@ if __name__ == "__main__":
         app,
         host="localhost",
         port=5000,
-        debug=True
+        debug=True,
+        ssl_context="adhoc"
     )
