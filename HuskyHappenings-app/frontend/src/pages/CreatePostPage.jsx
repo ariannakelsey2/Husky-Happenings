@@ -11,7 +11,7 @@ export default function CreatePostPage() {
   useEffect(() => {
     const loadGroups = async () => {
       try {
-        const response = await fetch("https://localhost:5000/api/my-groups", {
+        const response = await fetch("https://localhost:5000/api/groups/my", {
           credentials: "include",
         });
 
@@ -39,7 +39,7 @@ export default function CreatePostPage() {
     }
 
     try {
-      const response = await fetch("https://localhost:5000/api/posts", {
+      const response = await fetch("http://localhost:5000/api/posts", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
