@@ -2,7 +2,7 @@ import "./App.css";
 import { Routes, Route } from "react-router-dom";
 import { useAuth } from "./context/AuthContext.jsx";
 
-import Sidebar from "./components/Sidebar.jsx";
+import Sidebar from "./components/SideBar.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
 
 import Landing from "./pages/Landing.jsx";
@@ -12,6 +12,8 @@ import Login from "./pages/Login.jsx";
 import Profile from "./pages/Profile.jsx";
 import Settings from "./pages/Settings.jsx";
 import Messages from "./pages/Messages.jsx";
+import Notifications from "./pages/Notifications.jsx";
+import Groups from "./pages/Groups.jsx";
 import CreatePostPage from "./pages/CreatePostPage.jsx";
 
 // Arianna imports
@@ -20,7 +22,7 @@ import JobBoardPage from "./components/JobBoard/JobBoardPage.jsx";
 import MentorshipPage from "./components/Mentorship/MentorshipPage.jsx";
 
 function App() {
-  const {loading, isAuthenticated } = useAuth();
+  const { loading, isAuthenticated } = useAuth();
 
   if (loading) {
     return <p>Loading...</p>;
@@ -38,7 +40,6 @@ function App() {
           />
           <Route path="/signup" element={<Signup />} />
           <Route path="/login" element={<Login />} />
-
 
           <Route
             path="/create-post"
@@ -72,6 +73,24 @@ function App() {
             element={
               <ProtectedRoute>
                 <Messages />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/notifications"
+            element={
+              <ProtectedRoute>
+                <Notifications />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/groups"
+            element={
+              <ProtectedRoute>
+                <Groups />
               </ProtectedRoute>
             }
           />

@@ -23,8 +23,18 @@ function formatDateTime(value) {
   return `${month}/${day}/${year}, ${hour}:${minute} ${ampm}`;
 }
 
+function canManageEvent(event, currentUserId) {
+  return (
+    event.canManage === true ||
+    event.canManage === 1 ||
+    event.canManage === "1" ||
+    String(event.createdBy ?? event.CreatedByUserID ?? "") === String(currentUserId ?? "")
+  );
+}
+
 export default function EventList({
   events,
+  currentUserId,
   onEdit,
   onCancel,
   onDelete,
@@ -58,17 +68,13 @@ export default function EventList({
             )}
           </div>
 
-          <div className="event-action-row">
-            <button type="button" onClick={() => onEdit(event)}>
-              Edit
-            </button>
-            <button type="button" onClick={() => onCancel(event.id)}>
-              Cancel
-            </button>
-            <button type="button" onClick={() => onDelete(event.id)}>
-              Delete
-            </button>
-          </div>
+          {canManageEvent(event, currentUserId) && (
+            <div className="event-action-row">
+              <button type="button" onClick={() => onEdit(event)}>Edit</button>
+              <button type="button" onClick={() => onCancel(event.id)}>Cancel</button>
+              <button type="button" onClick={() => onDelete(event.id)}>Delete</button>
+            </div>
+          )}
 
           <div className="event-action-row">
             <button type="button" onClick={() => onRegister(event.id, "Going")}>
