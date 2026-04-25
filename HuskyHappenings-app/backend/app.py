@@ -12,8 +12,8 @@ import secrets
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True, origins=["https://localhost:5173"])
-socketio = SocketIO(app, cors_allowed_origins="https://localhost:5173")
+CORS(app, supports_credentials=True, origins=["http://localhost:5173"])
+socketio = SocketIO(app, cors_allowed_origins="http://localhost:5173")
 
 
 # Connects the backend to the MySQL database
@@ -149,7 +149,7 @@ def login():
         "token",
         token,
         expires=expires_at,
-        secure=True,
+        secure=False,
         httponly=True,
         samesite="Lax"
     )
@@ -174,7 +174,7 @@ def logout():
         db.commit()
 
     response = jsonify({"message": "Logged out"})
-    response.set_cookie("token", "", expires=0, secure=True, httponly=True, samesite="Lax")
+    response.set_cookie("token", "", expires=0, secure=False, httponly=True, samesite="Lax")
     return response, 200
 
 
@@ -2064,62 +2064,11 @@ def create_notification(recipient_user_id, trigger_user_id, notification_type, m
     db.commit()
     local_cursor.close()
 
-    # Returns all accepted groups the current user belongs to
-# Author: Sophia Priola
-@app.get("/api/my-groups")
-@login_required
-def get_my_groups():
-    local_cursor = db.cursor(dictionary=True)
-    local_cursor.execute(
-        """
-        SELECT hg.GroupID, hg.GroupName, hg.StudyCategory
-        FROM GroupMember gm
-        JOIN HGroup hg
-            ON gm.GroupID = hg.GroupID
-        WHERE gm.UserID = %s
-          AND gm.MembershipStatus = 'Accepted'
-          AND hg.IsActive = TRUE
-        ORDER BY hg.GroupName ASC
-        """,
-        (g.user_id,)
-    )
-    groups = local_cursor.fetchall()
-    local_cursor.close()
-
-    return jsonify(groups), 200
-
-
-@app.post("/api/conversations")
-@login_required
-def create_conversation():
-    data = request.get_json()
-    user_id = g.user_id
-    other_users = data.get("otherUsers")
-    conversation_name = data.get("conversationName")
-
-    cursor.execute("INSERT INTO CONVERSATIONS (NAME) VALUES (%s)", (conversation_name,))
-    conversation = cursor.lastrowid
-
-    cursor.execute(
-        "INSERT INTO CONVERSATION_MEMBERS (CONVERSATION_ID, USER_ID) VALUES (%s, %s)",
-        (conversation, user_id)
-    )
-
-    for each in other_users:
-        cursor.execute(
-            "INSERT INTO CONVERSATION_MEMBERS (CONVERSATION_ID, USER_ID) VALUES (%s, %s)",
-            (conversation, each)
-        )
-
-    db.commit()
-    return jsonify({"message": "Conversation created"}), 201
-
 
 if __name__ == "__main__":
     socketio.run(
         app,
         host="localhost",
         port=5000,
-        debug=True,
-        ssl_context="adhoc"
+        debug=True
     )
