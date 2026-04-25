@@ -26,12 +26,21 @@ db = mysql.connector.connect(
 )
 cursor = db.cursor(dictionary=True)
 
+def ensure_db_connection():
+    global db, cursor
+
+    if not db.is_connected():
+        db.reconnect(attempts=3, delay=2)
+        cursor = db.cursor(dictionary=True)
+
 
 # This decorator wraps a function with a check to see if the user has a valid token before proceeding
 # Author: Ashley Pike
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        ensure_db_connection()
+
         token = request.cookies.get('token')
 
         if not token:
