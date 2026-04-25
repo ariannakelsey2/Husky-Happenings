@@ -23,31 +23,32 @@ export default function Messages() {
     };
   }, []);
 
-  useEffect(() => {
-    async function loadConversations() {
-      try {
-        const response = await fetch("https://localhost:5000/api/conversations", {
-          credentials: "include",
-        });
+  const loadConversations = async () => {
+    try {
+      const response = await fetch("https://localhost:5000/api/conversations", {
+        credentials: "include",
+      });
 
-        const data = await response.json();
+      const data = await response.json();
 
-        if (!response.ok) {
-          setError(data.error || "Failed to load conversation");
-          return;
-        }
-
-        setConversations(data);
-        
-        if (data.length > 0) {
-          setSelectedConversation(data[0]);
-        }
-      } catch {
-        setError("Network error");
-      } finally {
-        setLoading(false);
+      if (!response.ok) {
+        setError(data.error || "Failed to load conversation");
+        return;
       }
+
+      setConversations(data);
+      
+      if (data.length > 0 && !selectedConversation) {
+        setSelectedConversation(data[0]);
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setLoading(false);
     }
+  };
+
+  useEffect(() => {
     loadConversations();
   }, []);
   
@@ -60,6 +61,7 @@ export default function Messages() {
         conversations={conversations}
         selectedConversation={selectedConversation}
         setSelectedConversation={setSelectedConversation}
+        onConversationCreated={loadConversations}
       />
       <ChatPanel
         currentUser={currentUser}
