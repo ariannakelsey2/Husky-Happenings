@@ -1,5 +1,5 @@
 import {useState, useEffect} from "react";
-import {useParams} from "react-router-dom";
+import {useParams, useNavigate} from "react-router-dom";
 import "./Profile.css";
 import {useAuth} from "../context/AuthContext.jsx";
 import DatePicker from "react-datepicker";
@@ -7,12 +7,14 @@ import DatePicker from "react-datepicker";
 export default function Profile() {
   const {currentUser} = useAuth();
   const {userId} = useParams();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [messagingLoading, setMessagingLoading] = useState(false);
   const isOwnProfile = !userId || parseInt(userId) === currentUser?.user_id;
 
   // Form fields for editing
@@ -142,6 +144,32 @@ export default function Profile() {
     setSaveError("");
   }
 
+  async function handleMessage() {
+    setMessagingLoading(true);
+    try {
+      const response = await fetch(`https://localhost:5000/api/conversations/direct/${parseInt(userId)}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" }
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(data.error || "Failed to open conversation");
+        return;
+      }
+
+      // Navigate to messages page
+      navigate("/messages");
+    } catch (err) {
+      alert("Failed to open conversation");
+      console.error(err);
+    } finally {
+      setMessagingLoading(false);
+    }
+  }
+
   if (loading) return <div className="profile-page">Loading...</div>;
   if (error) return <div className="profile-page">{error}</div>;
 
@@ -154,6 +182,10 @@ export default function Profile() {
         <p className="profile-bio">{profile.bio}</p>
         {!editing && isOwnProfile ? (
           <button className="edit-profile-button" onClick={handleEdit}>Edit Profile</button>
+        ) : !editing && !isOwnProfile ? (
+          <button className="message-profile-button" onClick={handleMessage} disabled={messagingLoading}>
+            {messagingLoading ? "Opening..." : "Message"}
+          </button>
         ) : editing ? (
           <form className="edit-profile-form" onSubmit={handleSave}>
             {saveError && <div className="form-error">{saveError}</div>}
