@@ -28,7 +28,7 @@ export default function Notifications() {
   const markAsRead = async (notificationId) => {
     try {
       const response = await fetch(
-        `https://localhost:5000/api/notifications/${notificationId}/read`,
+        `http://localhost:5000/api/notifications/${notificationId}/read`,
         {
           method: "POST",
           credentials: "include",
@@ -50,7 +50,7 @@ export default function Notifications() {
   const markAllAsRead = async () => {
     try {
       const response = await fetch(
-        "https://localhost:5000/api/notifications/read-all",
+        "http://localhost:5000/api/notifications/read-all",
         {
           method: "POST",
           credentials: "include",
@@ -66,6 +66,29 @@ export default function Notifications() {
       }
     } catch (error) {
       console.error("Error marking all notifications as read:", error);
+    }
+  };
+
+  const handleGroupRequest = async (notification, action) => {
+    try {
+      const response = await fetch(
+        `http://localhost:5000/api/groups/${notification.RelatedGroupID}/requests/${notification.TriggerUserID}/${action}`,
+        {
+          method: "POST",
+          credentials: "include",
+        }
+      );
+
+      const data = await response.json();
+
+      if (response.ok) {
+        await markAsRead(notification.NotificationID);
+        loadNotifications();
+      } else {
+        alert(data.error || `Failed to ${action} request`);
+      }
+    } catch (error) {
+      alert("Network error");
     }
   };
 
@@ -97,6 +120,7 @@ export default function Notifications() {
             >
               <div className="notification-top">
                 <p className="notification-message">{notification.Message}</p>
+
                 {!notification.IsRead && (
                   <button
                     className="read-btn"
@@ -115,6 +139,29 @@ export default function Notifications() {
                   {notification.CreatedAt}
                 </span>
               </div>
+
+              {notification.Type === "group_request" &&
+                !notification.IsRead && (
+                  <div className="notification-actions">
+                    <button
+                      className="accept-btn"
+                      onClick={() =>
+                        handleGroupRequest(notification, "approve")
+                      }
+                    >
+                      Accept
+                    </button>
+
+                    <button
+                      className="decline-btn"
+                      onClick={() =>
+                        handleGroupRequest(notification, "decline")
+                      }
+                    >
+                      Decline
+                    </button>
+                  </div>
+                )}
             </div>
           ))}
         </div>

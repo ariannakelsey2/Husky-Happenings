@@ -48,11 +48,13 @@ def login_required(f):
 
         now = datetime.now(timezone.utc)
 
-        cursor.execute(
+        local_cursor = db.cursor(dictionary=True)
+        local_cursor.execute(
             "SELECT USER_ID FROM SESSIONS WHERE TOKEN = %s AND EXPIRES_AT > %s",
             (token, now)
         )
-        session_data = cursor.fetchone()
+        session_data = local_cursor.fetchone()
+        local_cursor.close()
 
         if not session_data:
             return jsonify({"error": "Invalid or expired session."}), 401
@@ -155,7 +157,7 @@ def login():
         "token",
         token,
         expires=expires_at,
-        secure=False,
+        secure=True,
         httponly=True,
         samesite="Lax"
     )
@@ -1786,6 +1788,7 @@ def get_notifications():
             n.Message,
             n.IsRead,
             n.RelatedPostID,
+            n.RelatedGroupID,
             n.CreatedAt,
             u.USERNAME AS TriggerUsername
         FROM NOTIFICATION n
@@ -1997,16 +2000,15 @@ def join_group(group_id):
     existing = local_cursor.fetchone()
 
     if existing:
-        status = existing["MembershipStatus"]
         local_cursor.close()
+        return jsonify({"message": f"Current membership status: {existing['MembershipStatus']}"}), 200
 
-        if status == "Accepted":
-            return jsonify({"message": "Already a member of this group"}), 200
-
-        if status == "Pending":
-            return jsonify({"message": "Join request already pending"}), 200
-
-        return jsonify({"message": f"Current membership status: {status}"}), 200
+    local_cursor.execute(
+        "SELECT USERNAME FROM USERS WHERE USER_ID = %s",
+        (g.user_id,)
+    )
+    user = local_cursor.fetchone()
+    username = user["USERNAME"] if user else "Someone"
 
     if group["PrivacyType"] == "Public":
         local_cursor.execute(
@@ -2020,6 +2022,15 @@ def join_group(group_id):
 
         db.commit()
         local_cursor.close()
+
+        create_notification(
+            recipient_user_id=group["CreatedByUserID"],
+            trigger_user_id=g.user_id,
+            notification_type="group_join",
+            message=f"{username} joined your group: {group['GroupName']}",
+            related_post_id=None,
+            related_group_id=group["GroupID"]
+        )
 
         return jsonify({"message": "Joined group successfully"}), 201
 
@@ -2039,12 +2050,12 @@ def join_group(group_id):
         recipient_user_id=group["CreatedByUserID"],
         trigger_user_id=g.user_id,
         notification_type="group_request",
-        message=f'Someone requested to join {group["GroupName"]}',
-        related_post_id=None
+        message=f"{username} requested to join your group: {group['GroupName']}",
+        related_post_id=None,
+        related_group_id=group["GroupID"]
     )
 
     return jsonify({"message": "Join request sent"}), 201
-
 
 # Get pending requests for a group
 # Author: Sophia Priola
@@ -2201,7 +2212,14 @@ def decline_group_request(group_id, user_id):
 
 # Creates a notification for a user when another user interacts with their content
 # Author: Sophia Priola
-def create_notification(recipient_user_id, trigger_user_id, notification_type, message, related_post_id=None):
+def create_notification(
+    recipient_user_id,
+    trigger_user_id,
+    notification_type,
+    message,
+    related_post_id=None,
+    related_group_id=None
+):
     if recipient_user_id == trigger_user_id:
         return
 
@@ -2209,14 +2227,20 @@ def create_notification(recipient_user_id, trigger_user_id, notification_type, m
     local_cursor.execute(
         """
         INSERT INTO NOTIFICATION
-        (RecipientUserID, TriggerUserID, Type, Message, RelatedPostID)
-        VALUES (%s, %s, %s, %s, %s)
+        (RecipientUserID, TriggerUserID, Type, Message, RelatedPostID, RelatedGroupID)
+        VALUES (%s, %s, %s, %s, %s, %s)
         """,
-        (recipient_user_id, trigger_user_id, notification_type, message, related_post_id)
+        (
+            recipient_user_id,
+            trigger_user_id,
+            notification_type,
+            message,
+            related_post_id,
+            related_group_id
+        )
     )
     db.commit()
     local_cursor.close()
-
 
 if __name__ == "__main__":
     socketio.run(
