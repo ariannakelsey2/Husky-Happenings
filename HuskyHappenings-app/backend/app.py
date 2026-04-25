@@ -12,9 +12,8 @@ import secrets
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True, origins=["http://localhost:5173"])
-socketio = SocketIO(app, cors_allowed_origins="http://localhost:5173")
-
+CORS(app, supports_credentials=True, origins=["https://localhost:5173"])  # allows frontend to communicate with backend
+socketio = SocketIO(app, cors_allowed_origins="https://localhost:5173")
 
 # Connects the backend to the MySQL database
 # Author: Ashley Pike
@@ -22,7 +21,8 @@ db = mysql.connector.connect(
     host=os.getenv("DB_HOST"),
     user=os.getenv("DB_USER"),
     password=os.getenv("DB_PASSWORD"),
-    database=os.getenv("DB_NAME")
+    database=os.getenv("DB_NAME"),
+    ssl_ca=os.getenv("CA_PATH")
 )
 cursor = db.cursor(dictionary=True)
 
@@ -32,20 +32,18 @@ cursor = db.cursor(dictionary=True)
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        token = request.cookies.get("token")
+        token = request.cookies.get('token')
 
         if not token:
             return jsonify({"error": "Session cookie not found."}), 401
 
         now = datetime.now(timezone.utc)
 
-        local_cursor = db.cursor(dictionary=True)
-        local_cursor.execute(
+        cursor.execute(
             "SELECT USER_ID FROM SESSIONS WHERE TOKEN = %s AND EXPIRES_AT > %s",
             (token, now)
         )
-        session_data = local_cursor.fetchone()
-        local_cursor.close()
+        session_data = cursor.fetchone()
 
         if not session_data:
             return jsonify({"error": "Invalid or expired session."}), 401
@@ -53,7 +51,6 @@ def login_required(f):
         g.user_id = session_data["USER_ID"]
 
         return f(*args, **kwargs)
-
     return decorated_function
 
 
@@ -201,27 +198,56 @@ def me():
     }), 200
 
 
+@app.post("/api/conversations")
+@login_required
+def create_conversation():
+    try:
+        data = request.get_json()
+        user_id = g.user_id
+        otherUsers = data.get("otherUsers", [])
+        conversationName = data.get("conversationName")
+
+        if not otherUsers or len(otherUsers) == 0:
+            return jsonify({"error": "At least one user must be selected"}), 400
+
+        cursor.execute("INSERT INTO CONVERSATIONS (NAME) VALUES (%s)", (conversationName,))
+        conversation_id = cursor.lastrowid
+
+        cursor.execute(
+            "INSERT INTO CONVERSATION_MEMBERS (CONVERSATION_ID, USER_ID) VALUES (%s, %s)",
+            (conversation_id, user_id)
+        )
+        
+        for user_id_other in otherUsers:
+            cursor.execute(
+                "INSERT INTO CONVERSATION_MEMBERS (CONVERSATION_ID, USER_ID) VALUES (%s, %s)",
+                (conversation_id, user_id_other)
+            )
+
+        db.commit()
+        
+        return jsonify({
+            "message": "Conversation created",
+            "conversation_id": conversation_id
+        }), 201
+    except Exception as e:
+        db.rollback()
+        print(f"Error creating conversation: {e}")
+        return jsonify({"error": "Failed to create conversation"}), 500
+
+
 @app.get("/api/conversations")
 @login_required
 def get_conversations():
     cursor.execute("""
         SELECT
             c.CONVERSATION_ID AS conversation_id,
-            CASE
-                WHEN c.NAME IS NOT NULL THEN c.NAME
-                WHEN COUNT(cm2.USER_ID) = 1 THEN u.USERNAME
-                ELSE CONCAT('Group (', COUNT(cm2.USER_ID), ' members)')
-            END AS display_name,
+            c.NAME AS conversation_name,
             COALESCE(m.CONTENT, '') AS latest_message,
             COALESCE(m.TIMESTAMP, c.CREATED_AT) AS latest_time
         FROM CONVERSATION_MEMBERS cm1
         JOIN CONVERSATIONS c
             ON cm1.CONVERSATION_ID = c.CONVERSATION_ID
-        LEFT JOIN CONVERSATION_MEMBERS cm2
-            ON c.CONVERSATION_ID = cm2.CONVERSATION_ID
-           AND cm2.USER_ID != cm1.USER_ID
-        LEFT JOIN USERS u
-            ON cm2.USER_ID = u.USER_ID
         LEFT JOIN (
             SELECT m1.CONVERSATION_ID, m1.CONTENT, m1.TIMESTAMP
             FROM MESSAGE m1
@@ -235,12 +261,43 @@ def get_conversations():
         ) m
             ON c.CONVERSATION_ID = m.CONVERSATION_ID
         WHERE cm1.USER_ID = %s
-        GROUP BY c.CONVERSATION_ID, c.NAME, u.USERNAME, m.CONTENT, m.TIMESTAMP, c.CREATED_AT
+        GROUP BY c.CONVERSATION_ID, c.NAME, m.CONTENT, m.TIMESTAMP, c.CREATED_AT
         ORDER BY latest_time DESC
     """, (g.user_id,))
 
     conversations = cursor.fetchall()
-    return jsonify(conversations), 200
+    
+    # Generate display names for conversations
+    result = []
+    for conv in conversations:
+        # Get all members in this conversation
+        cursor.execute("""
+            SELECT USER_ID AS user_id, USERNAME AS username, NAME AS name
+            FROM USERS u
+            WHERE USER_ID IN (
+                SELECT USER_ID FROM CONVERSATION_MEMBERS 
+                WHERE CONVERSATION_ID = %s AND USER_ID != %s
+            )
+        """, (conv["conversation_id"], g.user_id))
+        
+        other_members = cursor.fetchall()
+        
+        # Generate display name
+        if conv["conversation_name"]:
+            display_name = conv["conversation_name"]
+        elif len(other_members) == 1:
+            display_name = other_members[0]["name"]
+        else:
+            display_name = f"Group ({len(other_members) + 1} members)"
+        
+        result.append({
+            "conversation_id": conv["conversation_id"],
+            "display_name": display_name,
+            "latest_message": conv["latest_message"],
+            "latest_time": conv["latest_time"]
+        })
+    
+    return jsonify(result), 200
 
 
 @app.get("/api/conversations/<int:conversation_id>/messages")
@@ -341,7 +398,94 @@ def send_message(conversation_id):
     return jsonify({"message": "Message sent"}), 201
 
 
-@socketio.on("join_conversation")
+@app.get("/api/users/search")
+@login_required
+def search_users():
+    query = request.args.get("q", "").strip()
+    
+    if not query or len(query) < 2:
+        return jsonify([]), 200
+    
+    cursor.execute("""
+        SELECT USER_ID AS user_id, USERNAME AS username, NAME AS name, PICTURE_URL AS picture_url
+        FROM USERS
+        WHERE (USERNAME LIKE %s OR NAME LIKE %s) AND USER_ID != %s
+        LIMIT 20
+    """, (f"%{query}%", f"%{query}%", g.user_id))
+    
+    users = cursor.fetchall()
+    return jsonify([dict(user) for user in users]), 200
+
+
+@app.post("/api/conversations/direct/<int:other_user_id>")
+@login_required
+def get_or_create_direct_conversation(other_user_id):
+    """Get existing direct conversation with user or create a new one"""
+    try:
+        user_id = g.user_id
+        
+        # Validate that other user exists
+        cursor.execute("SELECT USER_ID, NAME FROM USERS WHERE USER_ID = %s", (other_user_id,))
+        other_user = cursor.fetchone()
+        
+        if not other_user:
+            return jsonify({"error": "User not found"}), 404
+        
+        if other_user_id == user_id:
+            return jsonify({"error": "Cannot message yourself"}), 400
+        
+        # Check if a direct conversation already exists
+        cursor.execute("""
+            SELECT c.CONVERSATION_ID
+            FROM CONVERSATIONS c
+            WHERE c.CONVERSATION_ID IN (
+                SELECT CONVERSATION_ID FROM CONVERSATION_MEMBERS WHERE USER_ID = %s
+            )
+            AND c.CONVERSATION_ID IN (
+                SELECT CONVERSATION_ID FROM CONVERSATION_MEMBERS WHERE USER_ID = %s
+            )
+            AND (
+                SELECT COUNT(*) FROM CONVERSATION_MEMBERS 
+                WHERE CONVERSATION_ID = c.CONVERSATION_ID
+            ) = 2
+            LIMIT 1
+        """, (user_id, other_user_id))
+        
+        existing_conversation = cursor.fetchone()
+        
+        if existing_conversation:
+            return jsonify({
+                "conversation_id": existing_conversation["CONVERSATION_ID"],
+                "created": False
+            }), 200
+        
+        # Create new direct conversation
+        cursor.execute("INSERT INTO CONVERSATIONS (NAME) VALUES (NULL)")
+        conversation_id = cursor.lastrowid
+        
+        cursor.execute(
+            "INSERT INTO CONVERSATION_MEMBERS (CONVERSATION_ID, USER_ID) VALUES (%s, %s)",
+            (conversation_id, user_id)
+        )
+        cursor.execute(
+            "INSERT INTO CONVERSATION_MEMBERS (CONVERSATION_ID, USER_ID) VALUES (%s, %s)",
+            (conversation_id, other_user_id)
+        )
+        
+        db.commit()
+        
+        return jsonify({
+            "conversation_id": conversation_id,
+            "created": True
+        }), 201
+        
+    except Exception as e:
+        db.rollback()
+        print(f"Error creating direct conversation: {e}")
+        return jsonify({"error": "Failed to create conversation"}), 500
+
+
+@socketio.on('join_conversation')
 def handle_join_conversation(data):
     conversation_id = data.get("conversation_id")
     join_room(str(conversation_id))
@@ -2096,7 +2240,8 @@ def create_notification(recipient_user_id, trigger_user_id, notification_type, m
 if __name__ == "__main__":
     socketio.run(
         app,
-        host="localhost",
+        host='localhost',
         port=5000,
+        ssl_context=(os.getenv('FRONTEND_CERT_PATH'), os.getenv('FRONTEND_KEY_PATH')),
         debug=True
     )
