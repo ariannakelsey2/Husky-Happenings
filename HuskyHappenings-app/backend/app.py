@@ -724,6 +724,39 @@ def create_post():
 
     return jsonify({"message": "Post created successfully"}), 201
 
+@app.delete("/api/posts/<int:post_id>")
+@login_required
+def delete_post(post_id):
+    local_cursor = db.cursor(dictionary=True)
+
+    local_cursor.execute(
+        """
+        SELECT AUTHOR_ID
+        FROM POSTS
+        WHERE POST_ID = %s
+        """,
+        (post_id,)
+    )
+    post = local_cursor.fetchone()
+
+    if not post:
+        local_cursor.close()
+        return jsonify({"error": "Post not found"}), 404
+
+    if post["AUTHOR_ID"] != g.user_id:
+        local_cursor.close()
+        return jsonify({"error": "You can only delete your own posts"}), 403
+
+    local_cursor.execute(
+        "DELETE FROM POSTS WHERE POST_ID = %s",
+        (post_id,)
+    )
+
+    db.commit()
+    local_cursor.close()
+
+    return jsonify({"message": "Post deleted successfully"}), 200
+
 
 # Like a post
 @app.post("/api/posts/<int:post_id>/like")
