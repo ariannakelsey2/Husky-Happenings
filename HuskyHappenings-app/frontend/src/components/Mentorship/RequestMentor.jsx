@@ -6,7 +6,7 @@ export default function RequestMentor({ formData, onChange, onSubmit, mentorship
       
       <div>
         <label>Mentorship Program</label>
-        <select name="groupID" value={formData.groupID} onChange={onChange}>
+        <select name="programID" value={formData.programID} onChange={onChange}>
           <option value="">Select a program</option>
           {mentorships.map((item) => (
             <option key={item.id} value={item.id}>
